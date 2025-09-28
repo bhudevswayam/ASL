@@ -17,7 +17,7 @@ header {
     text-align: center;
 }
 
-h1, h2 {
+h1, h2, h3 {
     margin: 0;
     color: #4fc3f7;
 }
@@ -84,6 +84,59 @@ h1, h2 {
     background-color: #3d3d3d;
     border-radius: 4px;
     margin-top: 0.5rem;
+}
+
+/* New styles for sentence formation */
+.sentence-container {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: #2d2d2d;
+    border-radius: 8px;
+}
+
+.sentence-output {
+    min-height: 100px;
+    background-color: #3d3d3d;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+    line-height: 1.5;
+    word-wrap: break-word;
+}
+
+.sentence-controls {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+#recordButton {
+    background-color: #f44336;
+}
+
+#recordButton.recording {
+    background-color: #9c27b0;
+}
+
+#recordButton:hover {
+    background-color: #d32f2f;
+}
+
+#clearButton {
+    background-color: #ff9800;
+}
+
+#clearButton:hover {
+    background-color: #f57c00;
+}
+
+#backspaceButton, #addSpaceButton {
+    background-color: #2196f3;
+}
+
+#backspaceButton:hover, #addSpaceButton:hover {
+    background-color: #1976d2;
 }
 
 .warning {

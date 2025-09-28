@@ -9,12 +9,29 @@ class ASLDetector {
   private lastVideoTime: number = -1;
   private results: any;
   
+  // Sentence formation properties
+  private isRecording: boolean = false;
+  private currentSentence: string = "";
+  private lastDetectedSign: string = "";
+  private signBuffer: string[] = [];
+  private signConfidence: number = 0;
+  private signStabilityCounter: number = 0;
+  private lastSignChangeTime: number = 0;
+  private readonly SIGN_STABILITY_THRESHOLD: number = 5; // Number of consecutive same sign detections needed
+  private readonly SIGN_CONFIDENCE_THRESHOLD: number = 0.8; // Minimum confidence level to accept a sign
+  private readonly SIGN_PAUSE_THRESHOLD: number = 1000; // Time in ms to consider a pause between signs
+  
   // DOM elements
   private video: HTMLVideoElement;
   private canvasElement: HTMLCanvasElement;
   private canvasCtx: CanvasRenderingContext2D;
   private gestureOutput: HTMLElement;
   private enableWebcamButton: HTMLButtonElement;
+  private recordButton: HTMLButtonElement;
+  private sentenceOutput: HTMLElement;
+  private clearButton: HTMLButtonElement;
+  private backspaceButton: HTMLButtonElement;
+  private addSpaceButton: HTMLButtonElement;
   
   // Constants
   private readonly MODEL_URL: string = "https://rgxalrnmnlbmskupyhcm.supabase.co/storage/v1/object/public/signlanguage/letters.task";
@@ -26,10 +43,19 @@ class ASLDetector {
     this.canvasCtx = this.canvasElement.getContext("2d") as CanvasRenderingContext2D;
     this.gestureOutput = document.getElementById("gesture_output") as HTMLElement;
     this.enableWebcamButton = document.getElementById("webcamButton") as HTMLButtonElement;
+    this.recordButton = document.getElementById("recordButton") as HTMLButtonElement;
+    this.sentenceOutput = document.getElementById("sentence_output") as HTMLElement;
+    this.clearButton = document.getElementById("clearButton") as HTMLButtonElement;
+    this.backspaceButton = document.getElementById("backspaceButton") as HTMLButtonElement;
+    this.addSpaceButton = document.getElementById("addSpaceButton") as HTMLButtonElement;
     
     // Check for getUserMedia support
     if (this.hasGetUserMedia()) {
       this.enableWebcamButton.addEventListener("click", () => this.enableCam());
+      this.recordButton.addEventListener("click", () => this.toggleRecording());
+      this.clearButton.addEventListener("click", () => this.clearSentence());
+      this.backspaceButton.addEventListener("click", () => this.backspace());
+      this.addSpaceButton.addEventListener("click", () => this.addSpace());
     } else {
       console.warn("getUserMedia() is not supported by your browser");
       this.enableWebcamButton.textContent = "Webcam Not Supported";
@@ -44,6 +70,52 @@ class ASLDetector {
       console.error('Failed to load MediaPipe script:', error);
       this.updateLoadingProgress(0, "Failed to load MediaPipe. Please refresh the page.");
     });
+  }
+  
+  // Sentence formation methods
+  private toggleRecording(): void {
+    if (!this.webcamRunning) {
+      alert("Please enable the camera first");
+      return;
+    }
+    
+    this.isRecording = !this.isRecording;
+    
+    if (this.isRecording) {
+      this.recordButton.textContent = "Stop Recording";
+      this.recordButton.classList.add("recording");
+      this.clearButton.disabled = false;
+      this.backspaceButton.disabled = false;
+      this.addSpaceButton.disabled = false;
+      // Reset sign detection variables
+      this.signStabilityCounter = 0;
+      this.lastDetectedSign = "";
+      this.lastSignChangeTime = Date.now();
+    } else {
+      this.recordButton.textContent = "Start Recording";
+      this.recordButton.classList.remove("recording");
+    }
+  }
+  
+  private clearSentence(): void {
+    this.currentSentence = "";
+    this.updateSentenceDisplay();
+  }
+  
+  private backspace(): void {
+    if (this.currentSentence.length > 0) {
+      this.currentSentence = this.currentSentence.slice(0, -1);
+      this.updateSentenceDisplay();
+    }
+  }
+  
+  private addSpace(): void {
+    this.currentSentence += " ";
+    this.updateSentenceDisplay();
+  }
+  
+  private updateSentenceDisplay(): void {
+    this.sentenceOutput.textContent = this.currentSentence || "Your sentence will appear here...";
   }
   
   private loadMediaPipeScript(): Promise<void> {
@@ -176,6 +248,16 @@ class ASLDetector {
     if (this.webcamRunning) {
       this.webcamRunning = false;
       this.enableWebcamButton.textContent = "Enable Camera";
+      this.recordButton.disabled = true;
+      this.clearButton.disabled = true;
+      this.backspaceButton.disabled = true;
+      this.addSpaceButton.disabled = true;
+      
+      // If recording was active, stop it
+      if (this.isRecording) {
+        this.toggleRecording();
+      }
+      
       const stream = this.video.srcObject as MediaStream;
       const tracks = stream.getTracks();
       tracks.forEach(track => track.stop());
@@ -183,6 +265,8 @@ class ASLDetector {
     } else {
       this.webcamRunning = true;
       this.enableWebcamButton.textContent = "Disable Camera";
+      this.recordButton.disabled = false;
+      
       try {
         const constraints = {
           video: {
@@ -193,6 +277,9 @@ class ASLDetector {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         this.video.srcObject = stream;
         this.video.addEventListener("loadeddata", () => this.predictWebcam());
+        
+        // Initialize the sentence display
+        this.updateSentenceDisplay();
       } catch (err) {
         console.error("Error accessing webcam:", err);
         alert("Error accessing webcam. Please make sure you have granted camera permissions.");
@@ -215,6 +302,9 @@ class ASLDetector {
       this.lastVideoTime = this.video.currentTime;
       try {
         this.results = this.gestureRecognizer.recognizeForVideo(this.video, nowInMs);
+        
+        // Process the detected gestures for sentence formation
+        this.processGestureResults();
       } catch (error) {
         console.error("Error in gesture recognition:", error);
         this.gestureOutput.innerText = "Error in recognition. Please try again.";
@@ -258,6 +348,56 @@ class ASLDetector {
     if (this.webcamRunning) {
       window.requestAnimationFrame(() => this.predictWebcam());
     }
+  }
+  
+  // Process the detected gestures for sentence formation
+  private processGestureResults(): void {
+    if (!this.results || !this.results.gestures || this.results.gestures.length === 0) {
+      // Reset stability counter when no gesture is detected
+      if (this.isRecording) {
+        this.signStabilityCounter = 0;
+      }
+      return;
+    }
+    
+    const gesture = this.results.gestures[0][0];
+    const category = gesture.categoryName;
+    const score = gesture.score;
+    
+    // Process for sentence formation if recording is active
+    if (this.isRecording && score >= this.SIGN_CONFIDENCE_THRESHOLD) {
+      this.processSignForSentence(category, score);
+    }
+  }
+  
+  private processSignForSentence(sign: string, confidence: number): void {
+    const currentTime = Date.now();
+    
+    // If this is the same sign as last time, increment the stability counter
+    if (sign === this.lastDetectedSign) {
+      this.signStabilityCounter++;
+      
+      // If we've seen the same sign consistently enough, add it to the sentence
+      if (this.signStabilityCounter === this.SIGN_STABILITY_THRESHOLD) {
+        this.addSignToSentence(sign);
+      }
+    } else {
+      // Different sign detected, reset the counter and update the last detected sign
+      this.signStabilityCounter = 1;
+      this.lastDetectedSign = sign;
+      this.lastSignChangeTime = currentTime;
+    }
+  }
+  
+  private addSignToSentence(sign: string): void {
+    // Add the sign to the current sentence
+    this.currentSentence += sign;
+    
+    // Update the display
+    this.updateSentenceDisplay();
+    
+    // Reset stability counter to avoid adding the same sign repeatedly
+    this.signStabilityCounter = 0;
   }
 }
 
