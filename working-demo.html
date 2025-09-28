@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>ASL Sign Language Detector</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        header {
+            width: 100%;
+            background-color: #1e1e1e;
+            padding: 1rem 0;
+            text-align: center;
+        }
+        
+        h1, h2 {
+            margin: 0;
+            color: #4fc3f7;
+        }
+        
+        .content-section {
+            width: 100%;
+            max-width: 800px;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #2d2d2d;
+        }
+        
+        #webcam, #output_canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        #output_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .control-btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            background-color: #4caf50;
+            color: white;
+        }
+        
+        .control-btn:hover {
+            background-color: #388e3c;
+        }
+        
+        .control-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .output {
+            font-size: 1.2rem;
+            text-align: center;
+            padding: 1rem;
+            background-color: #3d3d3d;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+        }
+        
+        .warning {
+            background-color: #ff9800;
+            color: black;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+            text-align: center;
+        }
+        
+        .loading-bar {
+            width: 100%;
+            height: 10px;
+            background-color: #3d3d3d;
+            border-radius: 5px;
+            margin: 1rem 0;
+            overflow: hidden;
+        }
+        
+        .loading-progress {
+            height: 100%;
+            background-color: #4fc3f7;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .loading-text {
+            text-align: center;
+            margin-bottom: 0.5rem;
+            color: #4fc3f7;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ASL Sign Language Detector</h1>
+    </header>
+    
+    <main>
+        <section class="content-section">
+            <h2>Real-time Sign Language Detection</h2>
+            <p>
+                Practice sign language with real-time hand tracking using a camera. Show your hand signs 
+                to the camera and receive instant feedback on your gestures.
+            </p>
+            <div class="warning">Note: This is a prototype. Features are in beta testing.</div>
+            
+            <div class="loading-text" id="loading_text">Loading model...</div>
+            <div class="loading-bar">
+                <div class="loading-progress" id="loading_progress"></div>
+            </div>
+            
+            <div class="video-container">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="output_canvas" width="640" height="480"></canvas>
+            </div>
+            
+            <p id="gesture_output" class="output">No gesture detected</p>
+            
+            <div class="controls">
+                <button id="webcamButton" class="control-btn" disabled>Enable Camera</button>
+            </div>
+        </section>
+    </main>
+    
+    <script type="module">
+        import { GestureRecognizer, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+        let gestureRecognizer;
+        let runningMode = "IMAGE";
+        let webcamRunning = false;
+        let modelLoading = false;
+        
+        const videoHeight = "480px";
+        const videoWidth = "640px";
+        // Using the ASL alphabet model from the reference project
+        const MODEL_URL = "https://rgxalrnmnlbmskupyhcm.supabase.co/storage/v1/object/public/signlanguage/letters.task";
+        
+        // Initialize the GestureRecognizer with progress
+        const createGestureRecognizer = async () => {
+            if (modelLoading) return;
+            
+            try {
+                modelLoading = true;
+                updateLoadingProgress(10, "Loading MediaPipe vision module...");
+                
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+                );
+                
+                updateLoadingProgress(40, "Creating GestureRecognizer with model...");
+                
+                gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: MODEL_URL,
+                        delegate: "GPU"
+                    },
+                    runningMode: runningMode,
+                    numHands: 1
+                });
+                
+                modelLoading = false;
+                updateLoadingProgress(100, "Model loaded successfully!");
+                
+                // Enable the webcam button
+                document.getElementById("webcamButton").disabled = false;
+                
+                // Hide loading bar after a delay
+                setTimeout(() => {
+                    document.getElementById("loading_text").style.display = "none";
+                    document.querySelector(".loading-bar").style.display = "none";
+                }, 2000);
+                
+                console.log('Model loaded successfully!');
+            } catch (error) {
+                modelLoading = false;
+                updateLoadingProgress(0, "Failed to load model. Please refresh the page.");
+                console.error('Failed to load model:', error);
+                
+                // Try with CPU delegate if GPU fails
+                try {
+                    updateLoadingProgress(10, "Retrying with CPU delegate...");
+                    
+                    const vision = await FilesetResolver.forVisionTasks(
+                        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+                    );
+                    
+                    updateLoadingProgress(40, "Creating GestureRecognizer with CPU delegate...");
+                    
+                    gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                        baseOptions: {
+                            modelAssetPath: MODEL_URL,
+                            delegate: "CPU"
+                        },
+                        runningMode: runningMode,
+                        numHands: 1
+                    });
+                    
+                    modelLoading = false;
+                    updateLoadingProgress(100, "Model loaded successfully with CPU!");
+                    
+                    // Enable the webcam button
+                    document.getElementById("webcamButton").disabled = false;
+                    
+                    // Hide loading bar after a delay
+                    setTimeout(() => {
+                        document.getElementById("loading_text").style.display = "none";
+                        document.querySelector(".loading-bar").style.display = "none";
+                    }, 2000);
+                    
+                    console.log('Model loaded successfully with CPU!');
+                } catch (cpuError) {
+                    modelLoading = false;
+                    updateLoadingProgress(0, "Failed to load model. Please try a different browser.");
+                    console.error('Failed to load model with CPU:', cpuError);
+                }
+            }
+        };
+        
+        function updateLoadingProgress(percent, text) {
+            document.getElementById("loading_progress").style.width = `${percent}%`;
+            document.getElementById("loading_text").textContent = text;
+        }
+
+        const video = document.getElementById("webcam");
+        const canvasElement = document.getElementById("output_canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+        const gestureOutput = document.getElementById("gesture_output");
+        const enableWebcamButton = document.getElementById("webcamButton");
+
+        function hasGetUserMedia() {
+            return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        }
+
+        if (hasGetUserMedia()) {
+            enableWebcamButton.addEventListener("click", enableCam);
+        } else {
+            console.warn("getUserMedia() is not supported by your browser");
+            enableWebcamButton.textContent = "Webcam Not Supported";
+            enableWebcamButton.disabled = true;
+            updateLoadingProgress(0, "Webcam not supported by your browser");
+        }
+
+        async function enableCam() {
+            if (modelLoading) {
+                alert("Please wait for the AI model to finish loading...");
+                return;
+            }
+            
+            if (!gestureRecognizer) {
+                alert("AI model is not loaded yet. Please wait and try again.");
+                return;
+            }
+
+            if (webcamRunning) {
+                webcamRunning = false;
+                enableWebcamButton.textContent = "Enable Camera";
+                const stream = video.srcObject;
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                video.srcObject = null;
+            } else {
+                webcamRunning = true;
+                enableWebcamButton.textContent = "Disable Camera";
+                try {
+                    const constraints = {
+                        video: {
+                            width: 640,
+                            height: 480
+                        }
+                    };
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    video.srcObject = stream;
+                    video.addEventListener("loadeddata", predictWebcam);
+                } catch (err) {
+                    console.error("Error accessing webcam:", err);
+                    alert("Error accessing webcam. Please make sure you have granted camera permissions.");
+                }
+            }
+        }
+
+        let lastVideoTime = -1;
+        let results = undefined;
+
+        async function predictWebcam() {
+            // Make sure the canvas is setup with the video's actual dimensions
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+            
+            if (runningMode === "IMAGE") {
+                runningMode = "VIDEO";
+                await gestureRecognizer.setOptions({ runningMode: "VIDEO" });
+            }
+
+            let nowInMs = Date.now();
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                try {
+                    results = gestureRecognizer.recognizeForVideo(video, nowInMs);
+                } catch (error) {
+                    console.error("Error in gesture recognition:", error);
+                    gestureOutput.innerText = "Error in recognition. Please try again.";
+                    if (webcamRunning) {
+                        window.requestAnimationFrame(predictWebcam);
+                    }
+                    return;
+                }
+            }
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            const drawingUtils = new DrawingUtils(canvasCtx);
+
+            if (results && results.landmarks) {
+                for (const landmarks of results.landmarks) {
+                    drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, {
+                        color: "#00FF00",
+                        lineWidth: 2
+                    });
+                    drawingUtils.drawLandmarks(landmarks, {
+                        color: "#FF0000",
+                        lineWidth: 1
+                    });
+                }
+            }
+
+            canvasCtx.restore();
+
+            if (results && results.gestures && results.gestures.length > 0) {
+                const categoryName = results.gestures[0][0].categoryName;
+                const categoryScore = parseFloat(results.gestures[0][0].score * 100).toFixed(2);
+                gestureOutput.innerText = `${categoryName} (${categoryScore}%)`;
+            } else {
+                gestureOutput.innerText = "No gesture detected";
+            }
+
+            if (webcamRunning) {
+                window.requestAnimationFrame(predictWebcam);
+            }
+        }
+
+        // Start loading the model when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            createGestureRecognizer();
+        });
+        
+        // Start loading immediately since we're using a module script
+        createGestureRecognizer();
+    </script>
+</body>
+</html>
