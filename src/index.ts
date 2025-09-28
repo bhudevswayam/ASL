@@ -11,15 +11,20 @@ class ASLDetector {
   
   // Sentence formation properties
   private isRecording: boolean = false;
-  private currentSentence: string = "";
-  private lastDetectedSign: string = "";
+  private currentSentence: string = '';
+  private lastDetectedSign: string = '';
   private signBuffer: string[] = [];
   private signConfidence: number = 0;
   private signStabilityCounter: number = 0;
   private lastSignChangeTime: number = 0;
-  private readonly SIGN_STABILITY_THRESHOLD: number = 5; // Number of consecutive same sign detections needed
-  private readonly SIGN_CONFIDENCE_THRESHOLD: number = 0.8; // Minimum confidence level to accept a sign
-  private readonly SIGN_PAUSE_THRESHOLD: number = 1000; // Time in ms to consider a pause between signs
+  private lastAddedSign: string = '';
+  private lastAddedTime: number = 0;
+  private lastNoDetectionTime: number = 0;
+  private readonly SIGN_STABILITY_THRESHOLD: number = 10; // Number of consecutive frames to consider a sign stable (increased)
+  private readonly SIGN_CONFIDENCE_THRESHOLD: number = 0.85; // Minimum confidence level to accept a sign (increased)
+  private readonly SIGN_PAUSE_THRESHOLD: number = 1500; // Time in ms to consider a pause between signs (increased)
+  private readonly LETTER_COOLDOWN_PERIOD: number = 3500; // Time in ms before the same letter can be added again (increased)
+  private readonly NO_DETECTION_RESET_TIME: number = 2000; // Time in ms after which to reset detection if no gesture is detected
   
   // DOM elements
   private video: HTMLVideoElement;
@@ -352,13 +357,24 @@ class ASLDetector {
   
   // Process the detected gestures for sentence formation
   private processGestureResults(): void {
+    const currentTime = Date.now();
+    
     if (!this.results || !this.results.gestures || this.results.gestures.length === 0) {
-      // Reset stability counter when no gesture is detected
-      if (this.isRecording) {
+      // Track when we last had no detection
+      if (this.lastNoDetectionTime === 0) {
+        this.lastNoDetectionTime = currentTime;
+      }
+      
+      // Reset detection if no gesture has been detected for a while
+      if (this.isRecording && (currentTime - this.lastNoDetectionTime) > this.NO_DETECTION_RESET_TIME) {
         this.signStabilityCounter = 0;
+        this.lastDetectedSign = '';
       }
       return;
     }
+    
+    // Reset the no detection timer since we have a detection now
+    this.lastNoDetectionTime = 0;
     
     const gesture = this.results.gestures[0][0];
     const category = gesture.categoryName;
@@ -390,11 +406,23 @@ class ASLDetector {
   }
   
   private addSignToSentence(sign: string): void {
+    const currentTime = Date.now();
+    
+    // Check if this is the same sign as the last added one and if we're still in cooldown period
+    if (sign === this.lastAddedSign && (currentTime - this.lastAddedTime) < this.LETTER_COOLDOWN_PERIOD) {
+      // Skip adding this sign as we're still in cooldown period
+      return;
+    }
+    
     // Add the sign to the current sentence
     this.currentSentence += sign;
     
     // Update the display
     this.updateSentenceDisplay();
+    
+    // Store the sign and time for cooldown checking
+    this.lastAddedSign = sign;
+    this.lastAddedTime = currentTime;
     
     // Reset stability counter to avoid adding the same sign repeatedly
     this.signStabilityCounter = 0;
