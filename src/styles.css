@@ -1,0 +1,118 @@
+body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #121212;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+}
+
+header {
+    width: 100%;
+    background-color: #1e1e1e;
+    padding: 1rem 0;
+    text-align: center;
+}
+
+h1, h2 {
+    margin: 0;
+    color: #4fc3f7;
+}
+
+.content-section {
+    width: 100%;
+    max-width: 800px;
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+.video-container {
+    position: relative;
+    width: 100%;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #2d2d2d;
+}
+
+#webcam, #output_canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+#output_canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.control-btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    background-color: #4caf50;
+    color: white;
+}
+
+.control-btn:hover {
+    background-color: #388e3c;
+}
+
+.control-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+.output {
+    font-size: 1.2rem;
+    text-align: center;
+    padding: 1rem;
+    background-color: #3d3d3d;
+    border-radius: 4px;
+    margin-top: 0.5rem;
+}
+
+.warning {
+    background-color: #ff9800;
+    color: black;
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin: 1rem 0;
+    text-align: center;
+}
+
+.loading-bar {
+    width: 100%;
+    height: 10px;
+    background-color: #3d3d3d;
+    border-radius: 5px;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.loading-progress {
+    height: 100%;
+    background-color: #4fc3f7;
+    width: 0%;
+    transition: width 0.3s;
+}
+
+.loading-text {
+    text-align: center;
+    margin-bottom: 0.5rem;
+    color: #4fc3f7;
+}

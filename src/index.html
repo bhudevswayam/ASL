@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>ASL Sign Language Detector - TypeScript</title>
+    <!-- Import MediaPipe the same way as the working HTML version -->
+    <script type="module">
+        import { GestureRecognizer, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+        window.GestureRecognizer = GestureRecognizer;
+        window.FilesetResolver = FilesetResolver;
+        window.DrawingUtils = DrawingUtils;
+    </script>
+</head>
+<body>
+    <header>
+        <h1>ASL Sign Language Detector</h1>
+    </header>
+    
+    <main>
+        <section class="content-section">
+            <h2>Real-time Sign Language Detection</h2>
+            <p>
+                Practice sign language with real-time hand tracking using a camera. Show your hand signs 
+                to the camera and receive instant feedback on your gestures.
+            </p>
+            <div class="warning">Note: This is a prototype. Features are in beta testing.</div>
+            
+            <div class="loading-text" id="loading_text">Loading model...</div>
+            <div class="loading-bar">
+                <div class="loading-progress" id="loading_progress"></div>
+            </div>
+            
+            <div class="video-container">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="output_canvas" width="640" height="480"></canvas>
+            </div>
+            
+            <p id="gesture_output" class="output">No gesture detected</p>
+            
+            <div class="controls">
+                <button id="webcamButton" class="control-btn" disabled>Enable Camera</button>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
