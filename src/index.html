@@ -27,7 +27,6 @@
                 Practice sign language with real-time hand tracking using a camera. Show your hand signs 
                 to the camera and receive instant feedback on your gestures.
             </p>
-            <div class="warning">Note: This is a prototype. Features are in beta testing.</div>
             
             <div class="loading-text" id="loading_text">Loading model...</div>
             <div class="loading-bar">
@@ -52,7 +51,20 @@
                 <div class="sentence-controls">
                     <button id="clearButton" class="control-btn" disabled>Clear</button>
                     <button id="backspaceButton" class="control-btn" disabled>Backspace</button>
+                    <button id="newChatButton" class="control-btn" disabled>New Chat</button>
                     <button id="addSpaceButton" class="control-btn" disabled>Add Space</button>
+                    <button id="generateButton">Generate Sentence</button>
+                    <button id="speakButton" disabled>🔊 Speak</button>
+                    <button id="listenButton" disabled> Listen </button>
+                </div>
+                <br />
+                <div class="output-box" id="gemini_output_box">
+                    <strong>Generated Sentence:</strong>
+                    <p id="gemini_output">The generated sentence will appear here...</p>
+                </div>
+                <div class="output-box" id="heard_speech_box">
+                  <strong>Heard Speech:</strong>
+                  <p id="heard_speech_output">What the other person says will appear here...</p>
                 </div>
             </div>
         </section>

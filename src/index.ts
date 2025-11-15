@@ -1,4 +1,52 @@
 import './styles.css';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+
+const API_KEY = "AIzaSyAS4pllU3S63fy5TX5Ge2s9mLahO7hIxR0";
+// -----------------------------------------------------------------
+
+const genAI = new GoogleGenerativeAI(API_KEY); 
+const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+/**
+ * Converts gesture words into a full, natural sentence.
+ */
+export async function wordsToSentence(words: string[], history: string[]) {
+  const text = words.join(" ");
+
+  const historyString = history.length > 0
+    ? `Here is the conversation history so far. Use it for context:\n${history.join("\n")}\n\n`
+    : "";
+
+  const prompt = `
+    You are an AI assistant that helps a user communicate by converting
+    terse, signed-language words into full, polite sentences.
+
+    **Examples:**
+    - Input: "HELLO"
+      Sentence: "Hello, how are you?"
+    - Input: "BATHROOM WHERE"
+      Sentence: "Could you please tell me where the bathroom is?"
+    - Input: "THANKS"
+      Sentence: "Thank you very much."
+
+    // --- ADD THE HISTORY STRING TO THE PROMPT ---
+    ${historyString}
+    
+    **Task:**
+    Based on the history (if any), convert the user's *new* input into a natural sentence like a human conversation.
+    if you see letter X, interpret it as the word a non typable or unrecognized sign. and think ot of the simplest word near that letter
+    Respond with only the final sentence. also never respond with "I dont know" 
+
+    - Input: "${text}"
+      Sentence:
+  `;
+
+  console.log(prompt);
+  const result = await model.generateContent(prompt);
+  
+  return result.response.text();
+}
 
 // This is a simplified TypeScript implementation of the ASL sign language detector
 class ASLDetector {
@@ -21,7 +69,7 @@ class ASLDetector {
   private lastAddedTime: number = 0;
   private lastNoDetectionTime: number = 0;
   private readonly SIGN_STABILITY_THRESHOLD: number = 10; // Number of consecutive frames to consider a sign stable (increased)
-  private readonly SIGN_CONFIDENCE_THRESHOLD: number = 0.85; // Minimum confidence level to accept a sign (increased)
+  private readonly SIGN_CONFIDENCE_THRESHOLD: number = 0.65; // Minimum confidence level to accept a sign (increased)
   private readonly SIGN_PAUSE_THRESHOLD: number = 1500; // Time in ms to consider a pause between signs (increased)
   private readonly LETTER_COOLDOWN_PERIOD: number = 3500; // Time in ms before the same letter can be added again (increased)
   private readonly NO_DETECTION_RESET_TIME: number = 2000; // Time in ms after which to reset detection if no gesture is detected
@@ -37,10 +85,19 @@ class ASLDetector {
   private clearButton: HTMLButtonElement;
   private backspaceButton: HTMLButtonElement;
   private addSpaceButton: HTMLButtonElement;
-  
+  private generateButton: HTMLButtonElement;
+  private geminiOutput: HTMLElement;
+  private speakButton: HTMLButtonElement;
+  private synth: SpeechSynthesis;
+  private listenButton: HTMLButtonElement;
+  private heardSpeechOutput: HTMLElement;
+  private recognition: any; // Will hold the SpeechRecognition object
+  private isListening: boolean = false;
+  private conversationHistory: string[] = [];
+  private newChatButton: HTMLButtonElement;
   // Constants
   private readonly MODEL_URL: string = "https://rgxalrnmnlbmskupyhcm.supabase.co/storage/v1/object/public/signlanguage/letters.task";
-  
+
   constructor() {
     // Initialize DOM elements
     this.video = document.getElementById("webcam") as HTMLVideoElement;
@@ -53,7 +110,25 @@ class ASLDetector {
     this.clearButton = document.getElementById("clearButton") as HTMLButtonElement;
     this.backspaceButton = document.getElementById("backspaceButton") as HTMLButtonElement;
     this.addSpaceButton = document.getElementById("addSpaceButton") as HTMLButtonElement;
-    
+    this.generateButton = document.getElementById("generateButton") as HTMLButtonElement;
+    this.geminiOutput = document.getElementById("gemini_output") as HTMLElement;
+    this.speakButton = document.getElementById("speakButton") as HTMLButtonElement;
+    this.synth = window.speechSynthesis; 
+    this.listenButton = document.getElementById("listenButton") as HTMLButtonElement;
+    this.heardSpeechOutput = document.getElementById("heard_speech_output") as HTMLElement;
+    this.newChatButton = document.getElementById("newChatButton") as HTMLButtonElement;
+
+    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      this.recognition = new SpeechRecognition();
+      this.recognition.continuous = false; // Only listen for a single phrase
+      this.recognition.interimResults = false; // We only want the final, confirmed text
+      this.setupRecognitionEvents(); // Call a new method to set up listeners
+    } else {
+      console.warn("SpeechRecognition API not supported by this browser.");
+      this.listenButton.textContent = "Listen Not Supported";
+      this.listenButton.disabled = true;
+    }
     // Check for getUserMedia support
     if (this.hasGetUserMedia()) {
       this.enableWebcamButton.addEventListener("click", () => this.enableCam());
@@ -61,6 +136,11 @@ class ASLDetector {
       this.clearButton.addEventListener("click", () => this.clearSentence());
       this.backspaceButton.addEventListener("click", () => this.backspace());
       this.addSpaceButton.addEventListener("click", () => this.addSpace());
+      this.generateButton.addEventListener("click", () => this.generateFullSentence());
+      this.speakButton.addEventListener("click", () => this.speakGeneratedSentence());
+      this.listenButton.addEventListener("click", () => this.toggleListenForSpeech());
+      this.newChatButton.addEventListener("click", () => this.startNewChat());
+      
     } else {
       console.warn("getUserMedia() is not supported by your browser");
       this.enableWebcamButton.textContent = "Webcam Not Supported";
@@ -92,6 +172,8 @@ class ASLDetector {
       this.clearButton.disabled = false;
       this.backspaceButton.disabled = false;
       this.addSpaceButton.disabled = false;
+      this.generateButton.disabled = false;
+      this.newChatButton.disabled = false;
       // Reset sign detection variables
       this.signStabilityCounter = 0;
       this.lastDetectedSign = "";
@@ -105,6 +187,24 @@ class ASLDetector {
   private clearSentence(): void {
     this.currentSentence = "";
     this.updateSentenceDisplay();
+  }
+
+  private startNewChat(): void {
+    // 1. Clear the input
+    this.currentSentence = "";
+    this.updateSentenceDisplay();
+    
+    // 2. Clear the history
+    this.conversationHistory = [];
+    
+    // 3. Clear the output boxes
+    this.geminiOutput.textContent = "The generated sentence will appear here...";
+    this.heardSpeechOutput.textContent = "What the other person says will appear here...";
+    
+    // 4. Disable the speak button
+    this.speakButton.disabled = true;
+    
+    console.log("New chat started. History cleared.");
   }
   
   private backspace(): void {
@@ -190,7 +290,6 @@ class ASLDetector {
           loadingBar.style.display = "none";
         }, 2000);
         
-        console.log('Model loaded successfully with CPU!');
       } catch (cpuError) {
         console.warn('CPU delegate failed, trying GPU:', cpuError);
         
@@ -257,7 +356,8 @@ class ASLDetector {
       this.clearButton.disabled = true;
       this.backspaceButton.disabled = true;
       this.addSpaceButton.disabled = true;
-      
+      this.generateButton.disabled = true;
+      this.speakButton.disabled = true;
       // If recording was active, stop it
       if (this.isRecording) {
         this.toggleRecording();
@@ -271,6 +371,9 @@ class ASLDetector {
       this.webcamRunning = true;
       this.enableWebcamButton.textContent = "Disable Camera";
       this.recordButton.disabled = false;
+      if (this.recognition) {
+        this.listenButton.disabled = false;
+      }
       
       try {
         const constraints = {
@@ -355,6 +458,32 @@ class ASLDetector {
     }
   }
   
+  /**
+   * Sets up the event listeners for the SpeechRecognition object.
+   */
+
+  private toggleListenForSpeech(): void {
+    if (this.isListening) {
+      // If we are already listening, stop it.
+      this.recognition.stop();
+      this.isListening = false;
+      this.listenButton.textContent = "🎤 Listen";
+      this.listenButton.classList.remove("recording");
+    } else {
+      // If we are not listening, start it.
+      try {
+        this.recognition.start();
+        this.isListening = true;
+        this.listenButton.textContent = "Listening...";
+        this.listenButton.classList.add("recording"); // Use same style as your record button
+        this.heardSpeechOutput.textContent = "Listening for speech...";
+      } catch (e) {
+        console.error("Could not start recognition", e);
+        this.heardSpeechOutput.textContent = "Could not start listening. (Is mic already in use?)";
+      }
+    }
+  }
+
   // Process the detected gestures for sentence formation
   private processGestureResults(): void {
     const currentTime = Date.now();
@@ -426,6 +555,100 @@ class ASLDetector {
     
     // Reset stability counter to avoid adding the same sign repeatedly
     this.signStabilityCounter = 0;
+  }
+  private speakGeneratedSentence(): void {
+    const text = this.geminiOutput.textContent;
+    if (text && text !== "The generated sentence will appear here..." && text !== "Generating...") {
+      this.speakText(text);
+    }
+  }
+  private speakText(text: string): void {
+    // Stop any previous speech
+    if (this.synth.speaking) {
+      this.synth.cancel();
+    }
+
+    // Create a new "utterance" (the thing to be spoken)
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // You can set properties like voice, pitch, and rate here
+    // For example:
+    // utterance.voice = this.synth.getVoices()[0]; // Selects the first available voice
+    // utterance.pitch = 1.2;
+    // utterance.rate = 1.0;
+
+    // Tell the browser to speak it
+    this.synth.speak(utterance);
+  }
+  private async generateFullSentence(): Promise<void> {
+    const signedText = this.currentSentence.trim();
+    
+    if (signedText.length === 0) {
+      alert("Please sign some letters or words first.");
+      return;
+    }
+
+    // Split the sentence string (e.g., "HELLO THERE") into an array (["HELLO", "THERE"])
+    const wordsArray = signedText.split(/\s+/);
+    
+    // Show a loading state
+    this.geminiOutput.textContent = "Generating...";
+    this.generateButton.disabled = true; // Disable button during API call
+    this.speakButton.disabled = true;
+
+    try {
+      // Call the 'wordsToSentence' function (which is in the same file)
+      const fullSentence = await wordsToSentence(wordsArray, this.conversationHistory);
+      
+      // Display the result
+      this.geminiOutput.textContent = fullSentence;
+      this.conversationHistory.push(`User (signed): ${signedText}`);
+      this.conversationHistory.push(`AI (generated): ${fullSentence}`);
+      this.speakButton.disabled = false; // Enable the speak button
+      this.speakText(fullSentence);      // Speak the sentence automatically!
+      
+    } catch (error) {
+      console.error("Error generating sentence:", error);
+      this.geminiOutput.textContent = "Error: Could not generate sentence. (Check console for details)";
+    } finally {
+      // Re-enable the button once done
+      this.generateButton.disabled = false;
+    }
+  }
+  /**
+   * Sets up the event listeners for the SpeechRecognition object.
+   */
+  private setupRecognitionEvents(): void {
+    if (!this.recognition) return;
+
+    // Fired when the speech engine gets a final, usable result
+    this.recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      this.heardSpeechOutput.textContent = transcript;
+
+      // ---!!! THIS IS THE FIX !!!---
+      // You must add this line. This is where the
+      // "spoken" words are added to the history.
+      this.conversationHistory.push(`Other Person (spoke): ${transcript}`);
+      // ---!!! END OF FIX !!!---
+    };
+
+    // Fired when the speech engine stops listening
+    this.recognition.onend = () => {
+      this.isListening = false;
+      this.listenButton.textContent = "🎤 Listen";
+      this.listenButton.classList.remove("recording");
+    };
+
+    // Fired on an error (e.g., no speech detected)
+    this.recognition.onerror = (event: any) => {
+      console.error("Speech recognition error", event.error);
+      if (event.error === 'no-speech') {
+        this.heardSpeechOutput.textContent = "I didn't hear anything. Try again.";
+      } else {
+        this.heardSpeechOutput.textContent = "Error listening. Please try again.";
+      }
+    };
   }
 }
 
