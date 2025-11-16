@@ -94,6 +94,7 @@ class ASLDetector {
   private recognition: any; // Will hold the SpeechRecognition object
   private isListening: boolean = false;
   private conversationHistory: string[] = [];
+
   private newChatButton: HTMLButtonElement;
   // Constants
   private readonly MODEL_URL: string = "https://rgxalrnmnlbmskupyhcm.supabase.co/storage/v1/object/public/signlanguage/letters.task";
