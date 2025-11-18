@@ -2,7 +2,7 @@ import './styles.css';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 
-const API_KEY = "AIzaSyAS4pllU3S63fy5TX5Ge2s9mLahO7hIxR0";
+const API_KEY = "Add your API Key";
 // -----------------------------------------------------------------
 
 const genAI = new GoogleGenerativeAI(API_KEY); 
